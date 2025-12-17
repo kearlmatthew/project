@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>PolyMerge</title>
+    <style>
+        :root {
+            --bg-color: #1a1a2e;
+            --grid-bg: #16213e;
+            --cell-bg: #0f3460;
+            --text-color: #e94560;
+            --ui-font: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            color: white;
+            font-family: var(--ui-font);
+            overflow: hidden; /* Prevent scrolling */
+            touch-action: none; /* Prevent pull-to-refresh on mobile */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 100vh;
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .header {
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            pointer-events: auto;
+        }
+
+        .score-box {
+            text-align: center;
+        }
+
+        .label {
+            font-size: 0.8rem;
+            color: #aaa;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .value {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #fff;
+        }
+
+        #game-canvas {
+            display: block;
+            touch-action: none;
+        }
+
+        /* Modal Overlay */
+        #modal-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            display: none; /* Hidden by default */
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            pointer-events: auto;
+            z-index: 100;
+        }
+
+        .modal-content {
+            background: var(--grid-bg);
+            padding: 2rem;
+            border-radius: 1rem;
+            text-align: center;
+            border: 2px solid var(--text-color);
+            max-width: 90%;
+            width: 300px;
+        }
+
+        h2 { margin-top: 0; color: var(--text-color); }
+
+        input {
+            padding: 10px;
+            font-size: 1rem;
+            width: 80%;
+            margin: 10px 0;
+            border-radius: 5px;
+            border: none;
+            text-align: center;
+        }
+
+        button {
+            background: var(--text-color);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 1rem;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            margin-top: 10px;
+            transition: transform 0.1s;
+        }
+
+        button:active { transform: scale(0.95); }
+
+        .hidden { display: none !important; }
+
+    </style>
+</head>
+<body>
+
+    <div id="ui-layer">
+        <div class="header">
+            <div class="score-box">
+                <div class="label">Score</div>
+                <div class="value" id="score-display">0</div>
+            </div>
+            <div class="score-box">
+                <div class="label">Best</div>
+                <div class="value" id="highscore-display">0</div>
+            </div>
+        </div>
+    </div>
+
+    <canvas id="game-canvas"></canvas>
+
+    <div id="modal-overlay">
+        <div class="modal-content" id="game-over-modal">
+            <h2>Game Over</h2>
+            <p>Final Score: <span id="final-score">0</span></p>
+            
+            <div id="new-record-section" class="hidden">
+                <p style="color: #ffd700;">★ New High Score! ★</p>
+                <input type="text" id="player-name" placeholder="Enter Name" maxlength="10">
+            </div>
+
+            <button id="restart-btn">Play Again</button>
+        </div>
+    </div>
+
+    <script>
+        /** * Game Configuration & Constants 
+         */
+        const GRID_ROWS = 5;
+        const GRID_COLS = 5;
+        const SIDES_MIN = 3;  // Triangle
+        const SIDES_MAX = 12; // Dodecagon
+        
+        // Color palette for shapes (Sides 3 to 12)
+        const SHAPE_COLORS = {
+            3:  '#FF595E', // Red - Triangle
+            4:  '#FFCA3A', // Yellow - Square
+            5:  '#8AC926', // Green - Pentagon
+            6:  '#1982C4', // Blue - Hexagon
+            7:  '#6A4C93', // Purple - Heptagon
+            8:  '#F15BB5', // Pink - Octagon
+            9:  '#00F5D4', // Cyan - Nonagon
+            10: '#9B5DE5', // Violet - Decagon
+            11: '#FEE440', // Pale Yellow - Hendecagon
+            12: '#FFFFFF'  // White - Dodecagon
+        };
+
+        const PILE_SIZE = 2; // Number of slots in the hand
+
+        /**
+         * State Management
+         */
+        const state = {
+            grid: [], // 2D array [row][col]
+            piles: [], // Array of tile objects
+            score: 0,
+            highScore: 0,
+            highScoreName: "Player",
+            draggedTile: null,
+            dragStartPos: { x: 0, y: 0 }, // Initial mouse/touch pos
+            dragOffset: { x: 0, y: 0 },   // Offset from tile center
+            animations: [], // Active particle/text animations
+            isGameOver: false,
+            layout: { // Calculated based on screen size
+                cellSize: 0,
+                gridOriginX: 0,
+                gridOriginY: 0,
+                pileOriginX: 0,
+                pileOriginY: 0,
+                pileSpacing: 0
+            }
+        };
+
+        const canvas = document.getElementById('game-canvas');
+        const ctx = canvas.getContext('2d');
+        const scoreDisplay = document.getElementById('score-display');
+        const highScoreDisplay = document.getElementById('highscore-display');
+        const modalOverlay = document.getElementById('modal-overlay');
+        const finalScoreSpan = document.getElementById('final-score');
+        const restartBtn = document.getElementById('restart-btn');
+        const newRecordSection = document.getElementById('new-record-section');
+        const playerNameInput = document.getElementById('player-name');
+
+        /**
+         * Initialization & Logic
+         */
+
+        function init() {
+            // Load High Score
+            const storedScore = localStorage.getItem('polymerge_highscore');
+            const storedName = localStorage.getItem('polymerge_name');
+            if (storedScore) {
+                state.highScore = parseInt(storedScore);
+                state.highScoreName = storedName || "Player";
+            }
+            highScoreDisplay.textContent = state.highScore;
+
+            // Setup Resize Listener
+            window.addEventListener('resize', handleResize);
+            handleResize();
+
+            // Setup Inputs
+            canvas.addEventListener('mousedown', handleInputStart);
+            canvas.addEventListener('mousemove', handleInputMove);
+            canvas.addEventListener('mouseup', handleInputEnd);
+            
+            canvas.addEventListener('touchstart', handleInputStart, {passive: false});
+            canvas.addEventListener('touchmove', handleInputMove, {passive: false});
+            canvas.addEventListener('touchend', handleInputEnd, {passive: false});
+
+            restartBtn.addEventListener('click', resetGame);
+
+            resetGame();
+            gameLoop();
+        }
+
+        function resetGame() {
+            state.score = 0;
+            state.isGameOver = false;
+            scoreDisplay.textContent = "0";
+            state.animations = [];
+            modalOverlay.style.display = 'none';
+
+            // Initialize Grid
+            state.grid = Array(GRID_ROWS).fill(null).map(() => Array(GRID_COLS).fill(null));
+
+            // Initialize Piles
+            state.piles = [];
+            for (let i = 0; i < PILE_SIZE; i++) {
+                state.piles.push(generateNewTile());
+            }
+
+            requestAnimationFrame(draw);
+        }
+
+        function generateNewTile() {
+            // Weighted probability logic
+            // 75% Triangle (3), 15% Square (4), 5% Pent (5), Remaining diminishing
+            const rand = Math.random();
+            let sides = 3;
+
+            if (rand < 0.75) sides = 3;
+            else if (rand < 0.90) sides = 4;
+            else if (rand < 0.95) sides = 5;
+            else if (rand < 0.98) sides = 6;
+            else sides = 7; // Rare high starter
+
+            return {
+                id: Math.random().toString(36).substr(2, 9),
+                sides: sides,
+                x: 0, // Set by layout engine
+                y: 0,
+                isDragging: false
+            };
+        }
+
+        function handleResize() {
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+            
+            // Handle HiDPI screens
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = width * dpr;
+            canvas.height = height * dpr;
+            canvas.style.width = width + 'px';
+            canvas.style.height = height + 'px';
+            ctx.scale(dpr, dpr);
+
+            // Layout Calculations
+            const maxGridWidth = width * 0.9;
+            const maxGridHeight = height * 0.6; // Save space for piles at bottom
+            
+            // Cell size is determined by the smaller dimension available
+            state.layout.cellSize = Math.min(maxGridWidth / GRID_COLS, maxGridHeight / GRID_ROWS);
+            
+            // Center the grid
+            const gridTotalWidth = state.layout.cellSize * GRID_COLS;
+            const gridTotalHeight = state.layout.cellSize * GRID_ROWS;
+            
+            state.layout.gridOriginX = (width - gridTotalWidth) / 2;
+            state.layout.gridOriginY = (height * 0.45) - (gridTotalHeight / 2) + 40; // Shifted slightly down for header
+
+            // Pile Layout (Bottom area)
+            state.layout.pileSpacing = state.layout.cellSize * 1.5;
+            const totalPileWidth = (PILE_SIZE * state.layout.cellSize) + ((PILE_SIZE - 1) * 20); // 20px gap
+            
+            state.layout.pileOriginX = (width - totalPileWidth) / 2;
+            state.layout.pileOriginY = state.layout.gridOriginY + gridTotalHeight + 50;
+        }
+
+        /**
+         * Core Game Logic
+         */
+
+        function getScoreForSides(sides) {
+            // Non-linear scoring: 10 * 2^(sides - 3)
+            // 3:10, 4:20, 5:40, 6:80...
+            return 10 * Math.pow(2, sides - 3);
+        }
+
+        function checkGameOver() {
+            // 1. Are there empty spots?
+            for(let r=0; r<GRID_ROWS; r++) {
+                for(let c=0; c<GRID_COLS; c++) {
+                    if (state.grid[r][c] === null) return false;
+                }
+            }
+
+            // 2. Is grid full? If so, we need to check if we can actually make a move.
+            // Strict interpretation: If grid is full, you can't place a tile unless the game
+            // allows swapping (not implemented) or placing on top (not implemented).
+            // So if grid is full, it's game over.
+            
+            state.isGameOver = true;
+            
+            // Update High Score
+            let isNewRecord = false;
+            if (state.score > state.highScore) {
+                state.highScore = state.score;
+                localStorage.setItem('polymerge_highscore', state.highScore);
+                isNewRecord = true;
+            }
+
+            finalScoreSpan.textContent = state.score;
+            if (isNewRecord) {
+                newRecordSection.classList.remove('hidden');
+            } else {
+                newRecordSection.classList.add('hidden');
+            }
+            modalOverlay.style.display = 'flex';
+        }
+
+        function checkMatches(r, c) {
+            const targetSides = state.grid[r][c].sides;
+            const visited = new Set();
+            const matches = [];
+            
+            function floodFill(row, col) {
+                const key = `${row},${col}`;
+                if (row < 0 || row >= GRID_ROWS || col < 0 || col >= GRID_COLS) return;
+                if (visited.has(key)) return;
+                if (!state.grid[row][col]) return;
+                if (state.grid[row][col].sides !== targetSides) return;
+
+                visited.add(key);
+                matches.push({r: row, c: col});
+
+                // Orthogonal neighbors
+                floodFill(row + 1, col);
+                floodFill(row - 1, col);
+                floodFill(row, col + 1);
+                floodFill(row, col - 1);
+            }
+
+            floodFill(r, c);
+
+            if (matches.length >= 3) {
+                // Determine merge point (last placed tile is passed as r,c)
+                // Remove all matches
+                let earnedScore = 0;
+                
+                matches.forEach(m => {
+                    // Create particles at this location
+                    createParticles(
+                        state.layout.gridOriginX + m.c * state.layout.cellSize + state.layout.cellSize/2,
+                        state.layout.gridOriginY + m.r * state.layout.cellSize + state.layout.cellSize/2,
+                        SHAPE_COLORS[targetSides]
+                    );
+
+                    // Add score
+                    earnedScore += getScoreForSides(targetSides);
+                    
+                    // Clear tile (except the merge target for a moment logic, but we just swap it instantly)
+                    state.grid[m.r][m.c] = null;
+                });
+
+                // Upgrade the tile at the placement position
+                const newSides = Math.min(targetSides + 1, SIDES_MAX);
+                state.grid[r][c] = {
+                    id: Math.random().toString(36).substr(2, 9),
+                    sides: newSides
+                };
+
+                // Add Score animation
+                createFloatingText(earnedScore, 
+                    state.layout.gridOriginX + c * state.layout.cellSize + state.layout.cellSize/2,
+                    state.layout.gridOriginY + r * state.layout.cellSize
+                );
+
+                state.score += earnedScore;
+                scoreDisplay.textContent = state.score;
+
+                // Recursive Check: Did the new merged tile create a combo?
+                // Visual delay could be added here, but instantaneous is snappier for web
+                checkMatches(r, c);
+            }
+        }
+
+        /**
+         * Input Handling
+         */
+
+        function getPointerPos(e) {
+            if (e.touches) {
+                return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+            }
+            return { x: e.clientX, y: e.clientY };
+        }
+
+        function handleInputStart(e) {
+            if (state.isGameOver) return;
+            e.preventDefault();
+            const pos = getPointerPos(e);
+
+            // Check if touching a pile tile
+            const pileY = state.layout.pileOriginY;
+            const cs = state.layout.cellSize;
+
+            for (let i = 0; i < state.piles.length; i++) {
+                const pileX = state.layout.pileOriginX + (i * (cs + 20));
+                
+                // Simple AABB collision for touch
+                if (pos.x >= pileX && pos.x <= pileX + cs &&
+                    pos.y >= pileY && pos.y <= pileY + cs) {
+                    
+                    state.draggedTile = state.piles[i];
+                    state.draggedIndex = i;
+                    state.draggedTile.isDragging = true;
+                    state.dragStartPos = pos;
+                    
+                    // Calculate visual offset to keep tile under finger smoothly
+                    state.dragOffset = {
+                        x: pos.x - (pileX + cs/2),
+                        y: pos.y - (pileY + cs/2)
+                    };
+                    
+                    // Set current visual x/y to pointer
+                    state.draggedTile.x = pos.x - state.dragOffset.x;
+                    state.draggedTile.y = pos.y - state.dragOffset.y;
+                    return;
+                }
+            }
+        }
+
+        function handleInputMove(e) {
+            if (!state.draggedTile) return;
+            e.preventDefault();
+            const pos = getPointerPos(e);
+            
+            state.draggedTile.x = pos.x - state.dragOffset.x;
+            state.draggedTile.y = pos.y - state.dragOffset.y;
+        }
+
+        function handleInputEnd(e) {
+            if (!state.draggedTile) return;
+            e.preventDefault();
+
+            // Calculate grid drop
+            const cs = state.layout.cellSize;
+            const gx = state.layout.gridOriginX;
+            const gy = state.layout.gridOriginY;
+
+            // Center of dragged tile
+            const tx = state.draggedTile.x; // actually is center now due to render logic? No, x/y is center in render logic
+            const ty = state.draggedTile.y;
+
+            // Map to grid coordinates
+            // (tx, ty) are screen coords of center
+            const col = Math.floor((tx - gx + cs/2) / cs); // Offset slightly to make snap feel better
+            const row = Math.floor((ty - gy + cs/2) / cs);
+
+            let placed = false;
+
+            if (row >= 0 && row < GRID_ROWS && col >= 0 && col < GRID_COLS) {
+                if (state.grid[row][col] === null) {
+                    // Place it
+                    state.grid[row][col] = {
+                        id: state.draggedTile.id,
+                        sides: state.draggedTile.sides
+                    };
+                    placed = true;
+                    
+                    // Remove from pile and regenerate
+                    state.piles[state.draggedIndex] = generateNewTile();
+
+                    // Check Logic
+                    checkMatches(row, col);
+                    checkGameOver();
+                }
+            }
+
+            // Reset Drag
+            state.draggedTile.isDragging = false;
+            state.draggedTile = null;
+            state.draggedIndex = -1;
+        }
+
+        /**
+         * Rendering Functions
+         */
+
+        function drawPolygon(x, y, radius, sides, color) {
+            ctx.beginPath();
+            ctx.fillStyle = color;
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 2;
+            
+            // Rotation offset to make shapes look "upright"
+            const angleStep = (Math.PI * 2) / sides;
+            const rotationOffset = -Math.PI / 2; // Point up
+
+            for (let i = 0; i < sides; i++) {
+                const angle = i * angleStep + rotationOffset;
+                const px = x + Math.cos(angle) * radius;
+                const py = y + Math.sin(angle) * radius;
+                if (i === 0) ctx.moveTo(px, py);
+                else ctx.lineTo(px, py);
+            }
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            // Draw number (sides) in center
+            ctx.fillStyle = 'rgba(0,0,0,0.5)';
+            ctx.font = `bold ${radius * 0.8}px var(--ui-font)`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(sides, x, y + radius*0.1);
+        }
+
+        function createParticles(x, y, color) {
+            for(let i=0; i<10; i++) {
+                state.animations.push({
+                    type: 'particle',
+                    x: x,
+                    y: y,
+                    vx: (Math.random() - 0.5) * 10,
+                    vy: (Math.random() - 0.5) * 10,
+                    life: 1.0,
+                    color: color
+                });
+            }
+        }
+
+        function createFloatingText(text, x, y) {
+            state.animations.push({
+                type: 'text',
+                text: "+" + text,
+                x: x,
+                y: y,
+                vy: -2,
+                life: 1.0,
+                opacity: 1
+            });
+        }
+
+        function draw() {
+            // Clear Background
+            ctx.clearRect(0, 0, canvas.width, canvas.height); // Note: using scaled size implicitly via transforms? No, clearRect uses canvas space.
+            // Reset transform to clear effectively then restore
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--bg-color');
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Re-apply HiDPI scale
+            const dpr = window.devicePixelRatio || 1;
+            ctx.scale(dpr, dpr);
+
+            const cs = state.layout.cellSize;
+            const radius = (cs / 2) * 0.8; // 80% of cell half-width
+
+            // 1. Draw Grid Background
+            for (let r = 0; r < GRID_ROWS; r++) {
+                for (let c = 0; c < GRID_COLS; c++) {
+                    const gx = state.layout.gridOriginX + c * cs;
+                    const gy = state.layout.gridOriginY + r * cs;
+
+                    // Cell Background
+                    ctx.fillStyle = '#16213e';
+                    ctx.fillRect(gx + 2, gy + 2, cs - 4, cs - 4); // Grid gap effect
+
+                    // Empty Slot Marker (Optional visual aid)
+                    ctx.beginPath();
+                    ctx.arc(gx + cs/2, gy + cs/2, 2, 0, Math.PI*2);
+                    ctx.fillStyle = '#1f3a5f';
+                    ctx.fill();
+                }
+            }
+
+            // 2. Draw Tiles on Grid
+            for (let r = 0; r < GRID_ROWS; r++) {
+                for (let c = 0; c < GRID_COLS; c++) {
+                    const tile = state.grid[r][c];
+                    if (tile) {
+                        const gx = state.layout.gridOriginX + c * cs + cs/2;
+                        const gy = state.layout.gridOriginY + r * cs + cs/2;
+                        drawPolygon(gx, gy, radius, tile.sides, SHAPE_COLORS[tile.sides]);
+                    }
+                }
+            }
+
+            // 3. Draw Pile Tray Background (Visual container for piles)
+            const pileY = state.layout.pileOriginY;
+            const pileH = cs + 20;
+            const pileW = (PILE_SIZE * cs) + ((PILE_SIZE - 1) * 20) + 20;
+            
+            ctx.fillStyle = 'rgba(0,0,0,0.2)';
+            ctx.roundRect(state.layout.pileOriginX - 10, pileY - 10, pileW, pileH, 10);
+            ctx.fill();
+
+
+            // 4. Draw Piles
+            for (let i = 0; i < state.piles.length; i++) {
+                const tile = state.piles[i];
+                if (tile.isDragging) continue; // Draw dragged tile last
+
+                const px = state.layout.pileOriginX + (i * (cs + 20)) + cs/2;
+                const py = state.layout.pileOriginY + cs/2;
+                
+                drawPolygon(px, py, radius, tile.sides, SHAPE_COLORS[tile.sides]);
+            }
+
+            // 5. Draw Animations
+            for (let i = state.animations.length - 1; i >= 0; i--) {
+                const anim = state.animations[i];
+                if (anim.type === 'particle') {
+                    ctx.globalAlpha = anim.life;
+                    ctx.fillStyle = anim.color;
+                    ctx.beginPath();
+                    ctx.arc(anim.x, anim.y, 3, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.globalAlpha = 1;
+
+                    anim.x += anim.vx;
+                    anim.y += anim.vy;
+                    anim.life -= 0.05;
+                } else if (anim.type === 'text') {
+                    ctx.globalAlpha = anim.life;
+                    ctx.fillStyle = '#fff';
+                    ctx.font = 'bold 20px sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(anim.text, anim.x, anim.y);
+                    ctx.globalAlpha = 1;
+                    
+                    anim.y += anim.vy;
+                    anim.life -= 0.02;
+                }
+
+                if (anim.life <= 0) state.animations.splice(i, 1);
+            }
+
+            // 6. Draw Dragged Tile (on top of everything)
+            if (state.draggedTile) {
+                // Dragged tile x/y is the center
+                drawPolygon(state.draggedTile.x, state.draggedTile.y, radius * 1.1, state.draggedTile.sides, SHAPE_COLORS[state.draggedTile.sides]);
+                
+                // Snapping guide (ghost)
+                const gx = state.layout.gridOriginX;
+                const gy = state.layout.gridOriginY;
+                const col = Math.floor((state.draggedTile.x - gx + cs/2) / cs);
+                const row = Math.floor((state.draggedTile.y - gy + cs/2) / cs);
+
+                if (row >= 0 && row < GRID_ROWS && col >= 0 && col < GRID_COLS && state.grid[row][col] === null) {
+                    const snapX = gx + col * cs + cs/2;
+                    const snapY = gy + row * cs + cs/2;
+                    ctx.globalAlpha = 0.3;
+                    drawPolygon(snapX, snapY, radius, state.draggedTile.sides, '#fff');
+                    ctx.globalAlpha = 1;
+                }
+            }
+        }
+
+        function gameLoop() {
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Save Name Handler
+        playerNameInput.addEventListener('change', (e) => {
+            const name = e.target.value;
+            if(name) {
+                state.highScoreName = name;
+                localStorage.setItem('polymerge_name', name);
+            }
+        });
+
+        // Initialize
+        if (!HTMLCanvasElement.prototype.roundRect) {
+            // Polyfill for roundRect if not supported in older browsers
+            HTMLCanvasElement.prototype.roundRect = function (x, y, w, h, r) {
+                if (w < 2 * r) r = w / 2;
+                if (h < 2 * r) r = h / 2;
+                this.beginPath();
+                this.moveTo(x + r, y);
+                this.arcTo(x + w, y, x + w, y + h, r);
+                this.arcTo(x + w, y + h, x, y + h, r);
+                this.arcTo(x, y + h, x, y, r);
+                this.arcTo(x, y, x + w, y, r);
+                this.closePath();
+                return this;
+            }
+        }
+
+        init();
+
+    </script>
+</body>
+</html>

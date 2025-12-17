@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TVM Financial Calculator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        
+        /* Custom input number spinner removal */
+        input[type=number]::-webkit-inner-spin-button, 
+        input[type=number]::-webkit-outer-spin-button { 
+            -webkit-appearance: none; 
+            margin: 0; 
+        }
+        input[type=number] {
+            -moz-appearance: textfield;
+        }
+
+        .calc-btn {
+            transition: all 0.2s;
+        }
+        .calc-btn:active {
+            transform: scale(0.95);
+        }
+    </style>
+</head>
+<body class="bg-slate-100 min-h-screen flex items-center justify-center p-4">
+
+    <div class="w-full max-w-lg bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-200">
+        <!-- Header -->
+        <div class="bg-slate-800 p-6 text-white">
+            <h1 class="text-2xl font-bold flex items-center gap-2">
+                <i class="fa-solid fa-calculator text-emerald-400"></i> Finance Calc
+            </h1>
+            <p class="text-slate-400 text-sm mt-1">Time Value of Money (TVM) Solver</p>
+        </div>
+
+        <!-- Instructions / Warning -->
+        <div class="bg-amber-50 border-l-4 border-amber-400 p-4 text-sm text-amber-800">
+            <p><strong>Note on Signs:</strong> Cash <em>in</em> (loans received) is Positive (+). Cash <em>out</em> (payments, savings) is Negative (-).</p>
+        </div>
+
+        <!-- Calculator Form -->
+        <div class="p-6 space-y-4">
+            
+            <!-- Mode Toggle -->
+            <div class="flex justify-end mb-2">
+                <div class="bg-slate-100 p-1 rounded-lg flex text-xs font-semibold">
+                    <button id="mode-end" class="px-3 py-1 rounded bg-white shadow text-slate-800 transition-all" onclick="setMode('end')">END</button>
+                    <button id="mode-begin" class="px-3 py-1 rounded text-slate-500 hover:text-slate-700 transition-all" onclick="setMode('begin')">BEGIN</button>
+                </div>
+            </div>
+
+            <!-- N Input -->
+            <div class="flex items-center gap-2 group">
+                <div class="w-16 font-semibold text-slate-600">N</div>
+                <div class="relative flex-1">
+                    <input type="number" id="n" placeholder="# Periods" class="w-full p-3 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all font-mono text-slate-700">
+                    <span class="absolute right-3 top-3 text-xs text-slate-400 pointer-events-none">Periods</span>
+                </div>
+                <button onclick="solve('n')" class="calc-btn w-20 bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 rounded-lg text-sm shadow-md shadow-indigo-200">
+                    SOLVE
+                </button>
+            </div>
+
+            <!-- I/YR Input -->
+            <div class="flex items-center gap-2 group">
+                <div class="w-16 font-semibold text-slate-600">I/YR</div>
+                <div class="relative flex-1">
+                    <input type="number" id="iyr" placeholder="Annual Interest %" class="w-full p-3 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all font-mono text-slate-700">
+                    <span class="absolute right-3 top-3 text-xs text-slate-400 pointer-events-none">%</span>
+                </div>
+                <button onclick="solve('iyr')" class="calc-btn w-20 bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 rounded-lg text-sm shadow-md shadow-indigo-200">
+                    SOLVE
+                </button>
+            </div>
+
+            <!-- PV Input -->
+            <div class="flex items-center gap-2 group">
+                <div class="w-16 font-semibold text-slate-600">PV</div>
+                <div class="relative flex-1">
+                    <input type="number" id="pv" placeholder="Present Value" class="w-full p-3 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all font-mono text-slate-700">
+                    <span class="absolute right-3 top-3 text-xs text-slate-400 pointer-events-none">Curr.</span>
+                </div>
+                <button onclick="solve('pv')" class="calc-btn w-20 bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 rounded-lg text-sm shadow-md shadow-indigo-200">
+                    SOLVE
+                </button>
+            </div>
+
+            <!-- PMT Input -->
+            <div class="flex items-center gap-2 group">
+                <div class="w-16 font-semibold text-slate-600">PMT</div>
+                <div class="relative flex-1">
+                    <input type="number" id="pmt" placeholder="Payment Amount" class="w-full p-3 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all font-mono text-slate-700">
+                    <span class="absolute right-3 top-3 text-xs text-slate-400 pointer-events-none">Curr.</span>
+                </div>
+                <button onclick="solve('pmt')" class="calc-btn w-20 bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 rounded-lg text-sm shadow-md shadow-indigo-200">
+                    SOLVE
+                </button>
+            </div>
+
+            <!-- FV Input -->
+            <div class="flex items-center gap-2 group">
+                <div class="w-16 font-semibold text-slate-600">FV</div>
+                <div class="relative flex-1">
+                    <input type="number" id="fv" placeholder="Future Value" class="w-full p-3 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all font-mono text-slate-700">
+                    <span class="absolute right-3 top-3 text-xs text-slate-400 pointer-events-none">Curr.</span>
+                </div>
+                <button onclick="solve('fv')" class="calc-btn w-20 bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 rounded-lg text-sm shadow-md shadow-indigo-200">
+                    SOLVE
+                </button>
+            </div>
+
+            <!-- Error Message Container -->
+            <div id="error-msg" class="hidden mt-4 p-3 bg-red-100 text-red-700 text-sm rounded-lg border border-red-200 flex items-center gap-2">
+                <i class="fa-solid fa-circle-exclamation"></i>
+                <span id="error-text"></span>
+            </div>
+
+            <!-- Controls -->
+            <div class="grid grid-cols-2 gap-4 mt-6 pt-6 border-t border-slate-200">
+                <button onclick="clearFields()" class="py-3 px-4 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg font-medium transition-colors">
+                    Clear All
+                </button>
+                <div class="text-right text-xs text-slate-400 self-center">
+                    <p>Enter 4 values, solve for 5th.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let isBeginMode = false;
+
+        // Toggle Begin/End Mode
+        function setMode(mode) {
+            const btnEnd = document.getElementById('mode-end');
+            const btnBegin = document.getElementById('mode-begin');
+            
+            if (mode === 'begin') {
+                isBeginMode = true;
+                btnBegin.classList.add('bg-white', 'shadow', 'text-slate-800');
+                btnBegin.classList.remove('text-slate-500');
+                btnEnd.classList.remove('bg-white', 'shadow', 'text-slate-800');
+                btnEnd.classList.add('text-slate-500');
+            } else {
+                isBeginMode = false;
+                btnEnd.classList.add('bg-white', 'shadow', 'text-slate-800');
+                btnEnd.classList.remove('text-slate-500');
+                btnBegin.classList.remove('bg-white', 'shadow', 'text-slate-800');
+                btnBegin.classList.add('text-slate-500');
+            }
+        }
+
+        function getInputs() {
+            return {
+                n: document.getElementById('n').value === "" ? null : parseFloat(document.getElementById('n').value),
+                iyr: document.getElementById('iyr').value === "" ? null : parseFloat(document.getElementById('iyr').value),
+                pv: document.getElementById('pv').value === "" ? null : parseFloat(document.getElementById('pv').value),
+                pmt: document.getElementById('pmt').value === "" ? null : parseFloat(document.getElementById('pmt').value),
+                fv: document.getElementById('fv').value === "" ? null : parseFloat(document.getElementById('fv').value),
+            };
+        }
+
+        function showError(msg) {
+            const el = document.getElementById('error-msg');
+            const text = document.getElementById('error-text');
+            text.textContent = msg;
+            el.classList.remove('hidden');
+        }
+
+        function clearError() {
+            const el = document.getElementById('error-msg');
+            el.classList.add('hidden');
+        }
+
+        function setVal(id, val) {
+            const el = document.getElementById(id);
+            // Format to 2 decimal places usually, but allow more for precision
+            el.value = Number(val.toFixed(4)); 
+            
+            // Animation for visual feedback
+            el.classList.add('bg-emerald-100', 'text-emerald-800', 'font-bold');
+            setTimeout(() => {
+                el.classList.remove('bg-emerald-100', 'text-emerald-800', 'font-bold');
+            }, 1500);
+        }
+
+        function solve(target) {
+            clearError();
+            const inputs = getInputs();
+            const type = isBeginMode ? 1 : 0; // 1 for Begin, 0 for End
+
+            // Check if enough variables are present
+            let count = 0;
+            for (let k in inputs) {
+                if (inputs[k] !== null) count++;
+            }
+
+            if (count < 4) {
+                showError("Please enter at least 4 values to solve for the 5th.");
+                return;
+            }
+
+            // Fill missing inputs with 0 just for calculation safety if they are meant to be 0
+            // Logic: The user clicked "Solve" on the target. The other 4 MUST be numbers.
+            // If one of the *others* is null, we assume it is 0.
+            const n = inputs.n === null ? 0 : inputs.n;
+            const iyr = inputs.iyr === null ? 0 : inputs.iyr;
+            const pv = inputs.pv === null ? 0 : inputs.pv;
+            const pmt = inputs.pmt === null ? 0 : inputs.pmt;
+            const fv = inputs.fv === null ? 0 : inputs.fv;
+
+            const r = iyr / 100;
+
+            try {
+                let result = 0;
+
+                switch(target) {
+                    case 'fv':
+                        result = calcFV(r, n, pmt, pv, type);
+                        setVal('fv', result);
+                        break;
+                    case 'pv':
+                        result = calcPV(r, n, pmt, fv, type);
+                        setVal('pv', result);
+                        break;
+                    case 'pmt':
+                        result = calcPMT(r, n, pv, fv, type);
+                        setVal('pmt', result);
+                        break;
+                    case 'n':
+                        result = calcN(r, pv, pmt, fv, type);
+                        setVal('n', result);
+                        break;
+                    case 'iyr':
+                        result = calcRate(n, pv, pmt, fv, type);
+                        setVal('iyr', result * 100);
+                        break;
+                }
+            } catch (e) {
+                showError(e.message || "Calculation Error");
+            }
+        }
+
+        // --- MATH FUNCTIONS ---
+
+        function calcFV(r, n, pmt, pv, type) {
+            if (r === 0) return -(pv + pmt * n);
+            const r1 = 1 + r;
+            const pow = Math.pow(r1, n);
+            let fv = -(pv * pow + pmt * (1 + r * type) * (pow - 1) / r);
+            return fv;
+        }
+
+        function calcPV(r, n, pmt, fv, type) {
+            if (r === 0) return -(fv + pmt * n);
+            const r1 = 1 + r;
+            const pow = Math.pow(r1, n);
+            let pv = -(fv / pow + pmt * (1 + r * type) * (1 - 1/pow) / r);
+            return pv;
+        }
+
+        function calcPMT(r, n, pv, fv, type) {
+            if (r === 0) return -(pv + fv) / n;
+            const r1 = 1 + r;
+            const pow = Math.pow(r1, n);
+            let pmt = -(pv * pow + fv) * r / ((1 + r * type) * (pow - 1));
+            return pmt;
+        }
+
+        function calcN(r, pv, pmt, fv, type) {
+            if (r === 0) return -(pv + fv) / pmt;
+            
+            const r_adj = (1 + r * type);
+            // Formula derived from TVM equation
+            const num = -fv * r + pmt * r_adj;
+            const den = pmt * r_adj + pv * r;
+            
+            if (num / den <= 0) throw new Error("No solution for N (check signs).");
+            
+            let n = (Math.log(num) - Math.log(den)) / Math.log(1 + r);
+            return n;
+        }
+
+        function calcRate(n, pv, pmt, fv, type) {
+            // Newton-Raphson iteration to find interest rate
+            let r = 0.1; // Initial guess: 10%
+            let iter = 0;
+            const maxIter = 100;
+            const tolerance = 1e-6;
+
+            // Objective function: PV + PMT * factor + FV * (1+r)^-n = 0
+            // We want to find r such that f(r) = 0
+            
+            while (iter < maxIter) {
+                let f_val, f_prime;
+                
+                // Calculate f(r) and f'(r)
+                // To save complexity of explicit derivative, we use Secant Method approximation
+                // f'(r) ~ (f(r + h) - f(r)) / h
+                
+                const h = 1e-5;
+                
+                const f_r = tvmEquation(r, n, pv, pmt, fv, type);
+                const f_rh = tvmEquation(r + h, n, pv, pmt, fv, type);
+                
+                const slope = (f_rh - f_r) / h;
+                
+                if (Math.abs(slope) < 1e-9) break; // Slope too flat
+                
+                const new_r = r - f_r / slope;
+                
+                if (Math.abs(new_r - r) < tolerance) {
+                    return new_r;
+                }
+                
+                r = new_r;
+                iter++;
+            }
+            
+            if (iter === maxIter) throw new Error("Could not converge on a Rate.");
+            return r;
+        }
+
+        // Helper for numerical solver
+        // Calculates the standard TVM equation sum (should equal 0)
+        function tvmEquation(r, n, pv, pmt, fv, type) {
+            if (r === 0) return pv + pmt * n + fv;
+            const r1 = 1 + r;
+            const pow = Math.pow(r1, n);
+            // PV + PMT * ( (1 - (1+r)^-n) / r ) * (1+r*type) + FV * (1+r)^-n
+            // Rearranged for stability: PV * (1+r)^n + PMT * ((1+r)^n - 1)/r * (1+r*type) + FV
+            return pv * pow + pmt * (1 + r * type) * (pow - 1) / r + fv;
+        }
+
+        function clearFields() {
+            document.getElementById('n').value = '';
+            document.getElementById('iyr').value = '';
+            document.getElementById('pv').value = '';
+            document.getElementById('pmt').value = '';
+            document.getElementById('fv').value = '';
+            clearError();
+        }
+    </script>
+</body>
+</html>
